@@ -9,11 +9,18 @@ db_host = "178.62.216.119"
 db_port = 4567
 
 app = Flask(__name__)
-database = Redis(host="178.62.216.119", port=4567)
+database = Redis(host="178.62.216.119", port=4567, decode_responses = True)
 
 if not database.ping():
     raise Exception("No access")
 
+
+def authorize() ->str:
+    session_id = request.args.get("session_id")
+    login = database.get(f"session:{session_id}")
+    if not login:
+        abort(401)
+    return login
 
 
 @app.route("/signup")
@@ -67,6 +74,50 @@ def login():
         abort(500)
 
     return session_id
+
+@app.route("/contacts")
+def get_contacts():
+    login = authorize()
+
+
+    contacts = database.smembers(f"friends:{login}")
+    return list(contacts)
+
+@app.route("/add_contact")
+def new_contact():
+    login = authorize()
+    contact = request.args.get("login")
+    res = database.get(f"user:{contact}")
+    if res is None():
+        abort(402)
+    database.sadd("friends:{login}", contact)
+    database.sadd("friends:{contact}", login)
+
+    return "True"
+
+@app.route("/search")
+def search_contacts():
+    authorize()
+    login = request.args.get("login")
+    keys = database.keys(f"user:{login}*")
+    result = []
+    for key in keys:
+        _, login = key.split(":")
+        result.append(login)
+
+
+    return result
+
+
+
+@app.route("/delete_contact")
+def delete_contact():
+    login = authorize()
+    contact = request.args.get("login")
+    database.srem(f"friends:{login}", contact)
+    database.srem(f"friends:{contact}", login)
+    return "True"
+    
 
 @app.route("/broadcast_url")
 def get_broadcast_url():
